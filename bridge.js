@@ -22,9 +22,17 @@ function broadcast(event, data) {
   sseClients.forEach(res => res.write(payload));
 }
 
+function triggerRobot() {
+  if (port && port.isOpen) {
+    console.log("Writing 'F' to Robot...");
+    port.write('F\n'); // Added newline
+    port.drain();
+    broadcast('sent', { msg: 'F' });
+  }
+}
+
 async function startBridge() {
   if (running) return { ok: true };
-
   port = new SerialPort({ path: SERIAL_PATH, baudRate: SERIAL_BAUD, autoOpen: false });
 
   return new Promise((resolve) => {
@@ -37,13 +45,11 @@ async function startBridge() {
             broadcast('serial', { text: chunk.toString() });
           });
 
+          // This listens for external transfers (like your manual Ubuntu command)
           subscriptionId = connection.onAccountChange(ROBOT_WALLET, (info) => {
-            if (port && port.isOpen) {
-              port.write('F');
-              port.drain();
-              broadcast('sent', { msg: 'F' });
-            }
-          }, 'processed');
+            console.log("Account change detected via Blockchain");
+            triggerRobot();
+          }, 'confirmed');
 
           running = true;
           broadcast('status', { running: true, port: SERIAL_PATH });
@@ -90,6 +96,11 @@ app.post('/bridge/send', async (req, res) => {
     const secretKey = Uint8Array.from(JSON.parse(fs.readFileSync(keyPath, 'utf8')));
     const fromKeypair = Keypair.fromSecretKey(secretKey);
     
+    // Check if we are sending to ourselves
+    if (fromKeypair.publicKey.equals(ROBOT_WALLET)) {
+        console.warn("Warning: Sending SOL to self. AccountChange might not fire.");
+    }
+
     const transaction = new Transaction().add(
       SystemProgram.transfer({
         fromPubkey: fromKeypair.publicKey,
@@ -100,10 +111,7 @@ app.post('/bridge/send', async (req, res) => {
 
     const signature = await sendAndConfirmTransaction(connection, transaction, [fromKeypair]);
     
-    if (port && port.isOpen) {
-      port.write('F'); 
-      port.drain();
-    }
+    triggerRobot();
     
     res.json({ ok: true, signature });
   } catch (e) {
