@@ -6,8 +6,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
     <style>
         :root { --bg1: #071022; --bg2: #07182a; --accent1: #5eead4; --accent2: #60a5fa; }
-        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, var(--bg1), var(--bg2)); color: #e8eef7; padding: 20px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; max-width: 800px; }
+        html, body { height: 100%; }
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, var(--bg1), var(--bg2)); color: #e8eef7; padding: 20px; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+        .container { width: 920px; max-width: calc(100% - 40px); }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; max-width: 100%; }
         .card { background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
         .big { font-size: 32px; font-weight: 800; color: var(--accent1); }
         button { padding: 10px 20px; border-radius: 8px; border: none; font-weight: 700; cursor: pointer; margin: 5px; transition: 0.2s; }
@@ -22,25 +24,27 @@
     </style>
 </head>
 <body>
-    <h2>Ultrametre Dashboard</h2>
-    <div class="grid">
-        <div class="card"><div class="label">Bridge Status</div><p id="bridgeStatus"><span class="status-dot stopped"></span> Disconnected</p></div>
-        <div class="card"><div class="label">Last Logged (from Arduino)</div><div id="loggedDist" class="big">0 cm</div></div>
-        <div class="card" style="grid-column: span 2;"><div class="label">Live Serial Feed</div><div id="raw">Waiting for data...</div></div>
-    </div>
+    <div class="container">
+      <h2 style="text-align:center; margin-bottom:12px;">Ultrametre Dashboard</h2>
+      <div class="grid">
+          <div class="card"><div class="label">Bridge Status</div><p id="bridgeStatus"><span class="status-dot stopped"></span> Disconnected</p></div>
+          <div class="card"><div class="label">Last Logged (from Arduino)</div><div id="loggedDist" class="big">0 cm</div></div>
+          <div class="card" style="grid-column: span 2;"><div class="label">Live Serial Feed</div><div id="raw">Waiting for data...</div></div>
+      </div>
 
-    <div style="margin-top: 20px;">
-        <button id="startBtn" class="btn-primary" onclick="controlBridge('start')">Start Bridge</button>
-        <button id="stopBtn" class="btn-danger" onclick="controlBridge('stop')" disabled>Stop Bridge</button>
-    </div>
+      <div style="margin-top: 20px;">
+          <button id="startBtn" class="btn-primary" onclick="controlBridge('start')">Start Bridge</button>
+          <button id="stopBtn" class="btn-danger" onclick="controlBridge('stop')" disabled>Stop Bridge</button>
+      </div>
 
-    <div class="card" style="margin-top: 20px; max-width: 800px;">
-        <div class="label">Robot Controls</div>
-        <input id="amt" type="number" step="0.001" value="0.01" style="padding: 10px; border-radius: 5px; border: none; width: 100px;">
-        <button class="btn-primary" onclick="sendSol()">💸 Send SOL & Launch</button>
-        <button class="btn-secondary" onclick="fetchData()">🔄 Fetch Saved Dist</button>
-        <button class="btn-danger" onclick="clearData()">🧹 Clear Journey</button>
-        <p id="txResult" style="font-size: 12px; color: #9fb0c9; margin-top: 10px;"></p>
+      <div class="card" style="margin-top: 20px; width:100%;">
+          <div class="label">Robot Controls</div>
+          <input id="amt" type="number" step="0.001" value="0.01" style="padding: 10px; border-radius: 5px; border: none; width: 100px;">
+          <button id="sendBtn" class="btn-primary" disabled onclick="sendSol()">💸 Send SOL & Launch</button>
+          <button id="fetchBtn" class="btn-secondary" disabled onclick="fetchData()">🔄 Fetch Saved Dist</button>
+          <button id="clearBtn" class="btn-danger" disabled onclick="clearData()">🧹 Clear Journey</button>
+          <p id="txResult" style="font-size: 12px; color: #9fb0c9; margin-top: 10px;"></p>
+      </div>
     </div>
 
     <script>
@@ -76,17 +80,24 @@
             updateUI(status.running);
         }
 
+        let isBridgeRunning = false;
+
         async function fetchData() {
+            if (!isBridgeRunning) return alert('Bridge is not running');
             document.getElementById('loggedDist').innerText = 'Fetching...';
             await fetch('/bridge/fetch-data', { method: 'POST' });
         }
 
         async function clearData() {
+            if (!isBridgeRunning) return alert('Bridge is not running');
             if(!confirm("Reset Arduino distance to 0?")) return;
-            await fetch('/bridge/clear', { method: 'POST' });
+            const res = await fetch('/bridge/clear', { method: 'POST' });
+            const json = await res.json();
+            if (!res.ok) alert('Error: ' + (json.error || 'unknown'));
         }
 
         async function sendSol() {
+            if (!isBridgeRunning) return alert('Bridge is not running');
             const resEl = document.getElementById('txResult');
             resEl.innerText = "Processing Transaction...";
             try {
@@ -101,8 +112,16 @@
         }
 
         function updateUI(running) {
+            isBridgeRunning = !!running;
+
             document.getElementById('startBtn').disabled = running;
             document.getElementById('stopBtn').disabled = !running;
+
+            // enable/disable action buttons
+            document.getElementById('sendBtn').disabled = !running;
+            document.getElementById('fetchBtn').disabled = !running;
+            document.getElementById('clearBtn').disabled = !running;
+
             document.getElementById('bridgeStatus').innerHTML = running ? 
                 '<span class="status-dot running"></span> Bridge Connected' : 
                 '<span class="status-dot stopped"></span> Bridge Stopped';
